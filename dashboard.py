@@ -1,11 +1,12 @@
 import requests
 import urllib.parse
-from geopy.geocoders import Nominatim
+#from geopy.geocoders import Nominatim
 import xml.etree.ElementTree as ET
 from tkinter import *
 from tkinter import ttk
+from tkintermapview import TkinterMapView
 
-geolocator = Nominatim(user_agent='BuoyDashboard')
+#geolocator = Nominatim(user_agent='BuoyDashboard')
 
 def location_search():
     address = location_entry.get()
@@ -14,8 +15,8 @@ def location_search():
     try:
         response = requests.get(url).json()
         result = response[0]["lon"], response[0]["lat"]
-        latitude.set(result[0])
-        longitude.set(result[1])
+        latitude.set(result[1])
+        longitude.set(result[0])
         print(result)
         return result
     except Exception as e:
@@ -40,8 +41,14 @@ def buoy_search():
                 result.append(station)
     #print(result)
     searched_buoys.set(result)
-    #thing = searched_buoys.get()
-
+    map.delete_all_marker()
+    map.fit_bounding_box((latitude_num + radius_num, longitude_num - radius_num),
+                         (latitude_num - radius_num, longitude_num + radius_num))
+    location_marker = map.set_position(round(latitude_num,5), round(longitude_num,5), marker=True)
+    print(location_marker.position, location_marker.text)
+    location_marker.set_text("Search Location")
+    for buoy in result:
+        marker = map.set_marker(float(buoy.get("lat")), float(buoy.get("lon")), text=buoy.get("id"))
 
 
 def loadStations():
@@ -59,6 +66,9 @@ def parseXML(xmlfile):
         station = child.attrib
         station_list.append(station)
     return station_list
+
+
+#def plot_map():
 
 
 #buoy_search()
@@ -94,6 +104,11 @@ search_radius = StringVar(mainframe)
 radius_field = Entry(mainframe, textvariable=search_radius).grid(column=5, row=2)
 ttk.Button(mainframe, text="Search", width=15, command=buoy_search).grid(column=6, row=2)
 searched_buoys = Variable()
+
+#mapframe = Frame()
+map = TkinterMapView(width=500, height=500)
+map.grid(column=0, row=3, columnspan=5)
+
 
 win.mainloop()
 
