@@ -64,7 +64,7 @@ def parseXML(xmlfile):
         station_list.append(station)
     return station_list
 
-# TODO: encapsulate GUI features in functions/class
+# Need to Encapsulate GUI features in functions/class
 
 win = Tk()      # Instance of Tkinter frame
 win.title("Buoy Data Dashboard")
