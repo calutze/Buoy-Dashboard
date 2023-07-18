@@ -1,12 +1,9 @@
 import requests
 import urllib.parse
-#from geopy.geocoders import Nominatim
 import xml.etree.ElementTree as ET
 from tkinter import *
 from tkinter import ttk
 from tkintermapview import TkinterMapView
-
-#geolocator = Nominatim(user_agent='BuoyDashboard')
 
 def location_search():
     address = location_entry.get()
@@ -19,15 +16,15 @@ def location_search():
         longitude.set(result[0])
         print(result)
         return result
-    except Exception as e:
-        print(e)
+    except Exception as error:
+        print(error)
         return None, None
 
 
 def buoy_search():
     print("Buoy Search")
     # parse active station list
-    #loadStations()
+    loadStations()
     parsed_stations = parseXML('activestations.xml')
     result = []
     latitude_num = float(latitude.get())
@@ -67,11 +64,7 @@ def parseXML(xmlfile):
         station_list.append(station)
     return station_list
 
-
-#def plot_map():
-
-
-#buoy_search()
+# TODO: encapsulate GUI features in functions/class
 
 win = Tk()      # Instance of Tkinter frame
 win.title("Buoy Data Dashboard")
