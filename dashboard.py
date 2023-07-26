@@ -4,6 +4,9 @@ import xml.etree.ElementTree as ET
 from tkinter import *
 from tkinter import ttk
 from tkintermapview import TkinterMapView
+import pika
+from threading import Thread
+
 
 def location_search():
     address = location_entry.get()
@@ -24,8 +27,8 @@ def location_search():
 def buoy_search():
     print("Buoy Search")
     # parse active station list
-    loadStations()
-    parsed_stations = parseXML('activestations.xml')
+    load_stations()
+    parsed_stations = parse_xml('activestations.xml')
     result = []
     latitude_num = float(latitude.get())
     longitude_num = float(longitude.get())
@@ -36,7 +39,7 @@ def buoy_search():
         if (latitude_num - radius_num) <= station_lat <= (latitude_num + radius_num):
             if (longitude_num - radius_num) <= station_lon <= (longitude_num + radius_num):
                 result.append(station)
-    #print(result)
+    # print(result)
     searched_buoys.set(result)
     map.delete_all_marker()
     map.fit_bounding_box((latitude_num + radius_num, longitude_num - radius_num),
@@ -44,19 +47,21 @@ def buoy_search():
     location_marker = map.set_position(round(latitude_num,5), round(longitude_num,5), marker=True)
     print(location_marker.position, location_marker.text)
     location_marker.set_text("Search Location")
+    markers = []
     for buoy in result:
-        marker = map.set_marker(float(buoy.get("lat")), float(buoy.get("lon")), text=buoy.get("id"))
+        markers.append(map.set_marker(float(buoy.get("lat")), float(buoy.get("lon")), text=buoy.get("id"), command=click_buoy_event))
+    x=1
 
 
-def loadStations():
+def load_stations():
     station_list_url = "http://www.ndbc.noaa.gov/activestations.xml"
     response = requests.get(station_list_url)
     with open('activestations.xml', 'wb') as f:
         f.write(response.content)
 
 
-def parseXML(xmlfile):
-    tree = ET.parse(xmlfile)
+def parse_xml(xml_file):
+    tree = ET.parse(xml_file)
     root = tree.getroot()
     station_list = []
     for child in root:
@@ -64,7 +69,29 @@ def parseXML(xmlfile):
         station_list.append(station)
     return station_list
 
-# Need to Encapsulate GUI features in functions/class
+
+def click_buoy_event(marker):
+    buoy_id.set(marker.text)
+    microservice_thread()
+
+
+def microservice_thread():
+    ms_thread = Thread(target=buoy_request)
+    ms_thread.start()
+
+
+def buoy_request():
+    def callback(ch, method, properties, body):
+        print(f"{body.decode('utf-8')}")
+    connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+    channel = connection.channel()
+    channel.queue_declare(queue='To_Microservice')
+    channel.queue_declare(queue='To_Main_Program')
+    channel.basic_publish(exchange='', routing_key='To_Microservice', body=buoy_id.get())
+    print(f"Sent {buoy_id.get()}")
+    channel.basic_consume(queue="To_Main_Program", auto_ack=True, on_message_callback=callback)
+    channel.start_consuming()
+    connection.close()
 
 win = Tk()      # Instance of Tkinter frame
 win.title("Buoy Data Dashboard")
@@ -74,7 +101,7 @@ mainframe.grid(column=0, row=0, sticky=(N, W, E, S))
 win.columnconfigure(0, weight=1)
 win.rowconfigure(0, weight=1)
 
-#win.geometry("750x500")
+
 # Initialize label for location search
 location_label = Label(mainframe, text="Location Search")
 location_label.grid(column=0, row=1, sticky=(E))
@@ -96,12 +123,17 @@ radius_label = Label(mainframe, text="Radius").grid(column=4, row=2)
 search_radius = StringVar(mainframe)
 radius_field = Entry(mainframe, textvariable=search_radius).grid(column=5, row=2)
 ttk.Button(mainframe, text="Search", width=15, command=buoy_search).grid(column=6, row=2)
-searched_buoys = Variable()
+
 
 #mapframe = Frame()
 map = TkinterMapView(width=500, height=500)
 map.grid(column=0, row=3, columnspan=5)
 
+searched_buoys = Variable()
+buoy_label = Label(mainframe, text="Buoy ID:").grid(column=0, row=4)
+buoy_id = StringVar(mainframe)
+buoy_field = Entry(mainframe, textvariable=buoy_id).grid(column=1, row=4)
+ttk.Button(mainframe, text="Get Data", width=15, command=microservice_thread).grid(column=3, row=4)
 
 win.mainloop()
 
