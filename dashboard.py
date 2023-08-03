@@ -6,12 +6,14 @@ from tkinter import ttk
 from tkintermapview import TkinterMapView
 import pika
 from threading import Thread
+import pandas as pd
+import matplotlib.pyplot as plot
 
 
 def location_search():
     address = location_entry.get()
     print(address)
-    url = 'https://nominatim.openstreetmap.org/search/' + urllib.parse.quote(address) + '?format=json'
+    url = 'https://nominatim.openstreetmap.org/search?q=' + urllib.parse.quote(address) + '&format=json'
     try:
         response = requests.get(url).json()
         result = response[0]["lon"], response[0]["lat"]
@@ -32,7 +34,8 @@ def buoy_search():
     result = []
     latitude_num = float(latitude.get())
     longitude_num = float(longitude.get())
-    radius_num = float(search_radius.get())
+    miles_to_latitude = 69  # Conversion between miles and latitude
+    radius_num = float(search_radius.get())/miles_to_latitude
     for station in parsed_stations:
         station_lat = float(station.get('lat'))
         station_lon = float(station.get('lon'))
@@ -50,7 +53,6 @@ def buoy_search():
     markers = []
     for buoy in result:
         markers.append(map.set_marker(float(buoy.get("lat")), float(buoy.get("lon")), text=buoy.get("id"), command=click_buoy_event))
-    x=1
 
 
 def load_stations():
@@ -83,6 +85,7 @@ def microservice_thread():
 def buoy_request():
     def callback(ch, method, properties, body):
         print(f"{body.decode('utf-8')}")
+
     connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
     channel = connection.channel()
     channel.queue_declare(queue='To_Microservice')
@@ -92,6 +95,17 @@ def buoy_request():
     channel.basic_consume(queue="To_Main_Program", auto_ack=True, on_message_callback=callback)
     channel.start_consuming()
     connection.close()
+
+class station:
+    def __init__(self, filename):
+        data = pd.read_csv(filename)
+
+    #def plot_tides(self):
+
+    #def summary_weather_data(self):
+
+def summary_weather():
+    x=1
 
 win = Tk()      # Instance of Tkinter frame
 win.title("Buoy Data Dashboard")
@@ -112,30 +126,32 @@ location_field.focus_set()
 location_field.grid(column=1, row=1, columnspan=2, sticky=(W, E))
 # Create Button for location search
 ttk.Button(mainframe, text="Search",width=15, command=location_search).grid(column=3, row=1)
-# Create Display label for location search result
+
+# Create Display label for buoy search latitude
 latitude_label = Label(mainframe, text="Latitude").grid(column=0, row=2)
 latitude = StringVar(mainframe)
 latitude_field = Entry(mainframe, textvariable=latitude).grid(column=1, row=2)
+# Create Display label for buoy search latitude
 longitude_label = Label(mainframe, text="Longitude").grid(column=2, row=2)
 longitude = StringVar(mainframe)
 longitude_field = Entry(mainframe, textvariable=longitude).grid(column=3, row=2)
-radius_label = Label(mainframe, text="Radius").grid(column=4, row=2)
+# Create Display label for buoy search radius
+radius_label = Label(mainframe, text="Radius [miles]").grid(column=4, row=2)
 search_radius = StringVar(mainframe)
 radius_field = Entry(mainframe, textvariable=search_radius).grid(column=5, row=2)
+# Create Button for buoy search
 ttk.Button(mainframe, text="Search", width=15, command=buoy_search).grid(column=6, row=2)
 
+# Create Map Widget
+map = TkinterMapView(mainframe, width=500, height=500)
+map.grid(column=1, row=4, columnspan=5)
 
-#mapframe = Frame()
-map = TkinterMapView(width=500, height=500)
-map.grid(column=0, row=3, columnspan=5)
-
+# Create Label for buoy id
 searched_buoys = Variable()
-buoy_label = Label(mainframe, text="Buoy ID:").grid(column=0, row=4)
+buoy_label = Label(mainframe, text="Buoy ID:").grid(column=0, row=3)
 buoy_id = StringVar(mainframe)
-buoy_field = Entry(mainframe, textvariable=buoy_id).grid(column=1, row=4)
-ttk.Button(mainframe, text="Get Data", width=15, command=microservice_thread).grid(column=3, row=4)
+buoy_field = Entry(mainframe, textvariable=buoy_id).grid(column=1, row=3)
+# Create Button for buoy data search
+ttk.Button(mainframe, text="Get Data", width=15, command=microservice_thread).grid(column=3, row=3)
 
 win.mainloop()
-
-
-
