@@ -7,8 +7,35 @@ from tkintermapview import TkinterMapView
 import pika
 from threading import Thread
 import pandas as pd
-import matplotlib.pyplot as plot
+import matplotlib
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
+matplotlib.use('agg')
 
+class station:
+    def __init__(self, filename):
+        dart_data = pd.read_csv(filename, header=0, delimiter=r"\s+")
+
+    def tideplotter(self, file_name):
+        df = pd.read_csv(file_name, header=0, delimiter=r"\s+")
+        df.drop(columns=['T', 'ss'], inplace=True)
+        df.drop(0, inplace=True)
+        df['date'] = df[['#YY', 'MM', 'DD']].agg('-'.join, axis=1)
+        df['time'] = df[['hh', 'mm']].agg(':'.join, axis=1)
+        df['datetime'] = df['date'] + ' ' + df['time']
+        df['HEIGHT'] = df['HEIGHT'].astype(float)
+        df.plot(x='datetime', y='HEIGHT', kind='line', legend=None)
+        plt.ylabel('Height [m]')
+        plt.title("Tide")
+        plt.xlim(0, 500)
+        fig = Figure(figsize=(5, 5), dpi=100)
+        canvas = FigureCanvasTkAgg(fig, master=figframe)
+        canvas.draw()
+        canvas.get_tk_widget().pack()
+        #plt.show()
+
+    #def summary_weather_data(self):
 
 def location_search():
     address = location_entry.get()
@@ -48,7 +75,7 @@ def buoy_search():
     map.fit_bounding_box((latitude_num + radius_num, longitude_num - radius_num),
                          (latitude_num - radius_num, longitude_num + radius_num))
     location_marker = map.set_position(round(latitude_num,5), round(longitude_num,5), marker=True)
-    print(location_marker.position, location_marker.text)
+    print(location_marker.position)
     location_marker.set_text("Search Location")
     markers = []
     for buoy in result:
@@ -84,7 +111,10 @@ def microservice_thread():
 
 def buoy_request():
     def callback(ch, method, properties, body):
-        print(f"{body.decode('utf-8')}")
+        message = body.decode('utf-8')
+        if message != 'No files downloaded':
+            message_list = message.split(', ')
+            display_data(message_list)
 
     connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
     channel = connection.channel()
@@ -96,22 +126,58 @@ def buoy_request():
     channel.start_consuming()
     connection.close()
 
-class station:
-    def __init__(self, filename):
-        data = pd.read_csv(filename)
 
-    #def plot_tides(self):
+def tide_plot(file_name):
+    tide_data = pd.read_csv(file_name, header=0, delimiter=r"\s+")
+    tide_data.drop(columns=['T', 'ss'], inplace=True)
+    tide_data.drop(0, inplace=True)
+    tide_data['date'] = tide_data[['#YY', 'MM', 'DD']].agg('-'.join, axis=1)
+    tide_data['time'] = tide_data[['hh', 'mm']].agg(':'.join, axis=1)
+    tide_data['datetime'] = tide_data['date'] + ' ' + tide_data['time']
+    tide_data['HEIGHT'] = tide_data['HEIGHT'].astype(float)
+    fig = Figure(figsize=(5, 5), dpi=100)
+    ax = fig.add_subplot(111)
+    tide_data.plot(x='datetime', y='HEIGHT', kind='line', legend=None, ax=ax,
+            ylabel='Height [m]', title='Tide', xlim=(0,500))
+    canvas = FigureCanvasTkAgg(fig, master=tide_frame)
+    canvas.draw()
+    canvas.get_tk_widget().pack()
+    #toolbar = NavigationToolbar2Tk(canvas, tide_frame)
+    #toolbar.update()
+    #canvas.get_tk_widget().pack()
 
-    #def summary_weather_data(self):
 
-def summary_weather():
+def summary_weather(filename):
+    weather_data = pd.read_csv(file_name, header=0, delimiter=r"\s+", index_col=False)
+    # Create Display label for weather data
+
+    air_temp_label = Label(mainframe, text="Air").grid(column=0, row=0)
+    air_temp = StringVar(mainframe)
+    air_temp_field = Entry(mainframe, textvariable=air_temp).grid(column=1, row=2)
+
+
+def wave_plot(filename):
     x=1
+
+def display_data(file_list):
+    for file in file_list:
+        if '.dart' in file:
+            tide_plot(file)
+        if '.txt' in file:
+            summary_weather(file)
+        if '.spec' in file:
+            wave_plot(file)
+        #if '.cwind' in file:
+            #wind_plot(file)
+
 
 win = Tk()      # Instance of Tkinter frame
 win.title("Buoy Data Dashboard")
 
 mainframe = ttk.Frame(win, padding="10")
 mainframe.grid(column=0, row=0, sticky=(N, W, E, S))
+tide_frame = ttk.Frame(win, padding='5')
+tide_frame.grid(column=0, row=1)
 win.columnconfigure(0, weight=1)
 win.rowconfigure(0, weight=1)
 
@@ -153,5 +219,6 @@ buoy_id = StringVar(mainframe)
 buoy_field = Entry(mainframe, textvariable=buoy_id).grid(column=1, row=3)
 # Create Button for buoy data search
 ttk.Button(mainframe, text="Get Data", width=15, command=microservice_thread).grid(column=3, row=3)
+
 
 win.mainloop()
