@@ -114,6 +114,7 @@ def buoy_request():
         message = body.decode('utf-8')
         if message != 'No files downloaded':
             message_list = message.split(', ')
+            print(f"Received Files: {message_list}")
             display_data(message_list)
 
     connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
@@ -135,10 +136,10 @@ def tide_plot(file_name):
     tide_data['time'] = tide_data[['hh', 'mm']].agg(':'.join, axis=1)
     tide_data['datetime'] = tide_data['date'] + ' ' + tide_data['time']
     tide_data['HEIGHT'] = tide_data['HEIGHT'].astype(float)
-    fig = Figure(figsize=(5, 5), dpi=100)
+    fig = Figure(figsize=(4, 4), dpi=100)
     ax = fig.add_subplot(111)
     tide_data.plot(x='datetime', y='HEIGHT', kind='line', legend=None, ax=ax,
-            ylabel='Height [m]', title='Tide', xlim=(0,500))
+            ylabel='Height [m]', title='Tide', xlim=(0,200))
     canvas = FigureCanvasTkAgg(fig, master=tide_frame)
     canvas.draw()
     canvas.get_tk_widget().pack()
@@ -147,26 +148,65 @@ def tide_plot(file_name):
     #canvas.get_tk_widget().pack()
 
 
-def summary_weather(filename):
+def summary_weather(file_name):
     weather_data = pd.read_csv(file_name, header=0, delimiter=r"\s+", index_col=False)
-    # Create Display label for weather data
+    weather_units = weather_data.loc[0].copy(deep=True)
+    weather_data.drop(0, inplace=True)
 
-    air_temp_label = Label(mainframe, text="Air").grid(column=0, row=0)
-    air_temp = StringVar(mainframe)
-    air_temp_field = Entry(mainframe, textvariable=air_temp).grid(column=1, row=2)
+    search_atmp = weather_data[weather_data["ATMP"] != 'MM']
+    if len(search_atmp) == 0:
+        air_T = "N/A"
+    else:
+        air_T = search_atmp['ATMP'].head(1).values[0]
+    air_unit = weather_units.loc['ATMP']
+    air_temp = Label(master=weather_frame, justify="left",
+                     text=f"Air {air_T} {air_unit}")
+    air_temp.grid(column=0, row=0, sticky=W)
 
+    search_wtmp = weather_data[weather_data["WTMP"] != 'MM']
+    if len(search_wtmp) == 0:
+        water_T = "N/A"
+    else:
+        water_T = search_wtmp['WTMP'].head(1).values[0]
+    water_unit = weather_units.loc['WTMP']
+    water_temp = Label(master=weather_frame, justify="left",
+                       text=f"Water {water_T} {water_unit}")
+    water_temp.grid(column=0, row=1, sticky=W)
 
-def wave_plot(filename):
+    wind_dir = weather_data.loc[1, 'WDIR']
+    wind_speed = weather_data.loc[1, 'WSPD']
+    wind_speed_unit = weather_units.loc['WSPD']
+    wind_summary = Label(master=weather_frame, justify="left",
+                         text=f"Wind {wind_speed} {wind_speed_unit}, {wind_dir} \N{DEGREE SIGN}")
+    wind_summary.grid(column=0, row=2, sticky=W)
+
+    search_sig_wave_height = weather_data[
+        (weather_data["WVHT"] != 'MM') & (weather_data["DPD"] != 'MM') & (weather_data["MWD"] != 'MM')]
+    sig_wave_height = search_sig_wave_height["WVHT"].head(1).values[0]
+    sig_wave_unit = weather_units.loc["WVHT"]
+    swell_period = search_sig_wave_height["DPD"].head(1).values[0]
+    swell_direction = search_sig_wave_height["MWD"].head(1).values[0]
+    wave_summary = Label(master=weather_frame, justify="left",
+                         text=f"Swell {sig_wave_height} {sig_wave_unit} @ {swell_period} s {swell_direction} \N{DEGREE SIGN} ")
+    wave_summary.grid(column=0, row=3, sticky=W)
+
+def swell_plot(file_name):
     x=1
 
 def display_data(file_list):
+    weather_frame.grid_forget()
+    tide_frame.grid_forget()
+    swell_frame.grid_forget()
     for file in file_list:
         if '.dart' in file:
+            tide_frame.grid(column=0, row=2)
             tide_plot(file)
         if '.txt' in file:
+            weather_frame.grid(column=0, row=1)
             summary_weather(file)
         if '.spec' in file:
-            wave_plot(file)
+            swell_frame.grid(column=1, row=2)
+            swell_plot(file)
         #if '.cwind' in file:
             #wind_plot(file)
 
@@ -176,8 +216,12 @@ win.title("Buoy Data Dashboard")
 
 mainframe = ttk.Frame(win, padding="10")
 mainframe.grid(column=0, row=0, sticky=(N, W, E, S))
+weather_frame = ttk.Frame(win, padding='5')
+weather_frame.grid(column=0, row=1)
 tide_frame = ttk.Frame(win, padding='5')
-tide_frame.grid(column=0, row=1)
+tide_frame.grid(column=0, row=2)
+swell_frame = ttk.Frame(win, padding='5')
+swell_frame.grid(column=1, row=2)
 win.columnconfigure(0, weight=1)
 win.rowconfigure(0, weight=1)
 
