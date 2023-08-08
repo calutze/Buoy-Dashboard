@@ -7,6 +7,7 @@ from tkintermapview import TkinterMapView
 import pika
 from threading import Thread
 import pandas as pd
+import windrose
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
@@ -159,9 +160,8 @@ def summary_weather(file_name):
     else:
         air_T = search_atmp['ATMP'].head(1).values[0]
     air_unit = weather_units.loc['ATMP']
-    air_temp = Label(master=weather_frame, justify="left",
-                     text=f"Air {air_T} {air_unit}")
-    air_temp.grid(column=0, row=0, sticky=W)
+    Label(master=weather_frame, justify='right', text="Air").grid(column=0, row=0, sticky=W)
+    Label(master=weather_frame, justify='right', text=f"{air_T} {air_unit}").grid(column=1, row=0, sticky=W)
 
     search_wtmp = weather_data[weather_data["WTMP"] != 'MM']
     if len(search_wtmp) == 0:
@@ -169,16 +169,8 @@ def summary_weather(file_name):
     else:
         water_T = search_wtmp['WTMP'].head(1).values[0]
     water_unit = weather_units.loc['WTMP']
-    water_temp = Label(master=weather_frame, justify="left",
-                       text=f"Water {water_T} {water_unit}")
-    water_temp.grid(column=0, row=1, sticky=W)
-
-    wind_dir = weather_data.loc[1, 'WDIR']
-    wind_speed = weather_data.loc[1, 'WSPD']
-    wind_speed_unit = weather_units.loc['WSPD']
-    wind_summary = Label(master=weather_frame, justify="left",
-                         text=f"Wind {wind_speed} {wind_speed_unit}, {wind_dir} \N{DEGREE SIGN}")
-    wind_summary.grid(column=0, row=2, sticky=W)
+    Label(master=weather_frame, justify='right', text="Water").grid(column=0, row=1, sticky=W)
+    Label(master=weather_frame, justify='right', text=f"{water_T} {water_unit}").grid(column=1, row=1, sticky=W)
 
     search_sig_wave_height = weather_data[
         (weather_data["WVHT"] != 'MM') & (weather_data["DPD"] != 'MM') & (weather_data["MWD"] != 'MM')]
@@ -186,9 +178,16 @@ def summary_weather(file_name):
     sig_wave_unit = weather_units.loc["WVHT"]
     swell_period = search_sig_wave_height["DPD"].head(1).values[0]
     swell_direction = search_sig_wave_height["MWD"].head(1).values[0]
-    wave_summary = Label(master=weather_frame, justify="left",
-                         text=f"Swell {sig_wave_height} {sig_wave_unit} @ {swell_period} s {swell_direction} \N{DEGREE SIGN} ")
-    wave_summary.grid(column=0, row=3, sticky=W)
+    Label(master=weather_frame, justify='right', text="Waves").grid(column=0, row=2, sticky=W)
+    Label(master=weather_frame, justify='right',
+          text=f"{sig_wave_height} {sig_wave_unit} @ {swell_period} s {swell_direction} \N{DEGREE SIGN}").grid(column=1, row=2, sticky=W)
+
+    wind_dir = weather_data.loc[1, 'WDIR']
+    wind_speed = weather_data.loc[1, 'WSPD']
+    wind_speed_unit = weather_units.loc['WSPD']
+    Label(master=weather_frame, justify='right', text="Wind").grid(column=0, row=3, sticky=W)
+    Label(master=weather_frame, justify='right',
+          text=f"{wind_speed} {wind_speed_unit} {wind_dir} \N{DEGREE SIGN}").grid(column=1, row=3, sticky=W)
 
 def swell_plot(file_name):
     x=1
@@ -204,11 +203,9 @@ def display_data(file_list):
         if '.txt' in file:
             weather_frame.grid(column=0, row=1)
             summary_weather(file)
-        if '.spec' in file:
+        if '.data_spec' in file:
             swell_frame.grid(column=1, row=2)
             swell_plot(file)
-        #if '.cwind' in file:
-            #wind_plot(file)
 
 
 win = Tk()      # Instance of Tkinter frame
