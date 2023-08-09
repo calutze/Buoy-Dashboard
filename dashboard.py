@@ -201,22 +201,22 @@ def tide_plot(station):
 def summary_weather(station):
     Label(master=weather_frame, justify='right', text="Air").grid(column=0, row=0, sticky=W)
     Label(master=weather_frame, justify='right',
-          text=f"{station.air_temperature} {station.air_temperature_unit}").grid(column=1, row=0, sticky=W)
+          text=f"{station.air_temperature()} {station.air_temperature_unit()}").grid(column=1, row=0, sticky=W)
 
     Label(master=weather_frame, justify='right', text="Water").grid(column=0, row=1, sticky=W)
     Label(master=weather_frame, justify='right',
-          text=f"{station.water_temperature} "
-               f"{station.water_temperature_unit}").grid(column=1, row=1, sticky=W)
+          text=f"{station.water_temperature()} "
+               f"{station.water_temperature_unit()}").grid(column=1, row=1, sticky=W)
 
     Label(master=weather_frame, justify='right', text="Waves").grid(column=0, row=2, sticky=W)
     Label(master=weather_frame, justify='right',
-          text=f"{station.significant_wave_height} {station.wave_height_unit} @ {station.swell_period}"
-               f" s {station.swell_direction} \N{DEGREE SIGN}").grid(column=1, row=2, sticky=W)
+          text=f"{station.significant_wave_height()} {station.wave_height_unit()} @ {station.swell_period()}"
+               f" s {station.swell_direction()} \N{DEGREE SIGN}").grid(column=1, row=2, sticky=W)
 
     Label(master=weather_frame, justify='right', text="Wind").grid(column=0, row=3, sticky=W)
     Label(master=weather_frame, justify='right',
-          text=f"{station.wind_speed} {station.wind_speed_unit} "
-               f"{station.wind_direction} \N{DEGREE SIGN}").grid(column=1, row=3, sticky=W)
+          text=f"{station.wind_speed()} {station.wind_speed_unit()} "
+               f"{station.wind_direction()} \N{DEGREE SIGN}").grid(column=1, row=3, sticky=W)
 
 
 def swell_plot(file_name):
