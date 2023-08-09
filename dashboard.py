@@ -12,8 +12,80 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
-
 matplotlib.use('agg')
+
+
+class Station:
+    def __init__(self, file_list):
+        self.tide_data = None
+        self.weather_data = None
+        self.weather_units = None
+        self.filtered_wave_data = None
+        for file in file_list:
+            if '.dart' in file:
+                self._create_tide_data(file)
+            if '.txt' in file:
+                self._create_weather_data(file)
+
+    def _create_tide_data(self, file):
+        self.tide_data = pd.read_csv(file, header=0, delimiter=r"\s+")
+        self.tide_data.drop(columns=['T', 'ss'], inplace=True)
+        self.tide_data.drop(0, inplace=True)
+        self.tide_data['date'] = self.tide_data[['#YY', 'MM', 'DD']].agg('-'.join, axis=1)
+        self.tide_data['time'] = self.tide_data[['hh', 'mm']].agg(':'.join, axis=1)
+        self.tide_data['datetime'] = self.tide_data['date'] + ' ' + self.tide_data['time']
+        self.tide_data['HEIGHT'] = self.tide_data['HEIGHT'].astype(float)
+
+    def _create_weather_data(self, file):
+        self.weather_data = pd.read_csv(file, header=0, delimiter=r"\s+", index_col=False)
+        self.weather_units = self.weather_data.loc[0].copy(deep=True)
+        self.weather_data.drop(0, inplace=True)
+        self.filtered_wave_data = self.weather_data[
+            (self.weather_data["WVHT"] != 'MM') & (self.weather_data["DPD"] != 'MM') & (
+                    self.weather_data["MWD"] != 'MM')]
+
+    def air_temperature(self):
+        search_air_temp = self.weather_data[self.weather_data["ATMP"] != "MM"]
+        if len(search_air_temp) == 0:
+            air_temperature = "N/A"
+        else:
+            air_temperature = search_air_temp['ATMP'].head(1).values[0]
+        return air_temperature
+
+    def air_temperature_unit(self):
+        return self.weather_units.loc['ATMP']
+
+    def water_temperature(self):
+        search_water_temp = self.weather_data[self.weather_data["WTMP"] != 'MM']
+        if len(search_water_temp) == 0:
+            water_temperature = "N/A"
+        else:
+            water_temperature = search_water_temp['WTMP'].head(1).values[0]
+        return water_temperature
+
+    def water_temperature_unit(self):
+        return self.weather_units.loc['WTMP']
+
+    def significant_wave_height(self):
+        return self.filtered_wave_data["WVHT"].head(1).values[0]
+
+    def wave_height_unit(self):
+        return self.weather_units.loc["WVHT"]
+
+    def swell_period(self):
+        return self.filtered_wave_data["DPD"].head(1).values[0]
+
+    def swell_direction(self):
+        return self.filtered_wave_data["MWD"].head(1).values[0]
+
+    def wind_speed(self):
+        return self.weather_data.loc[1, "WDIR"]
+
+    def wind_speed_unit(self):
+        return self.weather_units.loc["WSPD"]
+
+    def wind_direction(self):
+        return self.weather_data.loc[1, "WDIR"]
 
 
 def location_search():
@@ -103,8 +175,7 @@ def buoy_request():
             message_list = message.split(', ')
             print(f"Received Files: {message_list}")
             buoy_data = Station(message_list)
-            #display_data(message_list)
-            display_data2(buoy_data)
+            display_data(buoy_data)
 
     connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
     channel = connection.channel()
@@ -117,97 +188,7 @@ def buoy_request():
     connection.close()
 
 
-class Station:
-    def __init__(self, file_list):
-        self.tide_data = None
-        self.weather_data = None
-        self.weather_units = None
-        self.filtered_wave_data = None
-        for file in file_list:
-            if '.dart' in file:
-                self._create_tide_data(file)
-            if '.txt' in file:
-                self._create_weather_data(file)
-
-    def _create_tide_data(self, file):
-        self.tide_data = pd.read_csv(file, header=0, delimiter=r"\s+")
-        self.tide_data.drop(columns=['T', 'ss'], inplace=True)
-        self.tide_data.drop(0, inplace=True)
-        self.tide_data['date'] = self.tide_data[['#YY', 'MM', 'DD']].agg('-'.join, axis=1)
-        self.tide_data['time'] = self.tide_data[['hh', 'mm']].agg(':'.join, axis=1)
-        self.tide_data['datetime'] = self.tide_data['date'] + ' ' + self.tide_data['time']
-        self.tide_data['HEIGHT'] = self.tide_data['HEIGHT'].astype(float)
-
-    def _create_weather_data(self, file):
-        self.weather_data = pd.read_csv(file, header=0, delimiter=r"\s+", index_col=False)
-        self.weather_units = self.weather_data.loc[0].copy(deep=True)
-        self.weather_data.drop(0, inplace=True)
-        self.filtered_wave_data = self.weather_data[
-            (self.weather_data["WVHT"] != 'MM') & (self.weather_data["DPD"] != 'MM') & (
-                    self.weather_data["MWD"] != 'MM')]
-
-    def air_temperature(self):
-        search_air_temp = self.weather_data[self.weather_data["ATMP"] != "MM"]
-        if len(search_air_temp) == 0:
-            air_temperature = "N/A"
-        else:
-            air_temperature = search_air_temp['ATMP'].head(1).values[0]
-        return air_temperature
-
-    def air_temperature_unit(self):
-        return self.weather_units.loc['ATMP']
-
-    def water_temperature(self):
-        search_water_temp = self.weather_data[self.weather_data["WTMP"] != 'MM']
-        if len(search_water_temp) == 0:
-            water_temperature = "N/A"
-        else:
-            water_temperature = search_water_temp['WTMP'].head(1).values[0]
-        return water_temperature
-
-    def water_temperature_unit(self):
-        return self.weather_units.loc['WTMP']
-
-    def significant_wave_height(self):
-        return self.filtered_wave_data["WVHT"].head(1).values[0]
-
-    def wave_height_unit(self):
-        return self.weather_units.loc["WVHT"]
-
-    def swell_period(self):
-        return self.filtered_wave_data["DPD"].head(1).values[0]
-
-    def swell_direction(self):
-        return self.filtered_wave_data["MWD"].head(1).values[0]
-
-    def wind_speed(self):
-        return self.weather_data.loc[1, "WDIR"]
-
-    def wind_speed_unit(self):
-        return self.weather_units.loc["WSPD"]
-
-    def wind_direction(self):
-        return self.weather_data.loc[1, "WDIR"]
-
-
-def tide_plot(file_name):
-    tide_data = pd.read_csv(file_name, header=0, delimiter=r"\s+")
-    tide_data.drop(columns=['T', 'ss'], inplace=True)
-    tide_data.drop(0, inplace=True)
-    tide_data['date'] = tide_data[['#YY', 'MM', 'DD']].agg('-'.join, axis=1)
-    tide_data['time'] = tide_data[['hh', 'mm']].agg(':'.join, axis=1)
-    tide_data['datetime'] = tide_data['date'] + ' ' + tide_data['time']
-    tide_data['HEIGHT'] = tide_data['HEIGHT'].astype(float)
-    fig = Figure(figsize=(4, 4), dpi=100)
-    ax = fig.add_subplot(111)
-    tide_data.plot(x='datetime', y='HEIGHT', kind='line', legend=None, ax=ax,
-                   ylabel='Height [m]', title='Tide', xlim=(0, 200))
-    canvas = FigureCanvasTkAgg(fig, master=tide_frame)
-    canvas.draw()
-    canvas.get_tk_widget().pack()
-
-
-def tide_plot2(station):
+def tide_plot(station):
     fig = Figure(figsize=(4, 4), dpi=100)
     ax = fig.add_subplot(111)
     station.tide_data.plot(x='datetime', y='HEIGHT', kind='line', legend=None, ax=ax,
@@ -217,50 +198,7 @@ def tide_plot2(station):
     canvas.get_tk_widget().pack()
 
 
-def summary_weather(file_name):
-    weather_data = pd.read_csv(file_name, header=0, delimiter=r"\s+", index_col=False)
-    weather_units = weather_data.loc[0].copy(deep=True)
-    weather_data.drop(0, inplace=True)
-
-    search_atmp = weather_data[weather_data["ATMP"] != 'MM']
-    if len(search_atmp) == 0:
-        air_T = "N/A"
-    else:
-        air_T = search_atmp['ATMP'].head(1).values[0]
-    air_unit = weather_units.loc['ATMP']
-    Label(master=weather_frame, justify='right', text="Air").grid(column=0, row=0, sticky=W)
-    Label(master=weather_frame, justify='right', text=f"{air_T} {air_unit}").grid(column=1, row=0, sticky=W)
-
-    search_wtmp = weather_data[weather_data["WTMP"] != 'MM']
-    if len(search_wtmp) == 0:
-        water_T = "N/A"
-    else:
-        water_T = search_wtmp['WTMP'].head(1).values[0]
-    water_unit = weather_units.loc['WTMP']
-    Label(master=weather_frame, justify='right', text="Water").grid(column=0, row=1, sticky=W)
-    Label(master=weather_frame, justify='right', text=f"{water_T} {water_unit}").grid(column=1, row=1, sticky=W)
-
-    search_sig_wave_height = weather_data[
-        (weather_data["WVHT"] != 'MM') & (weather_data["DPD"] != 'MM') & (weather_data["MWD"] != 'MM')]
-    sig_wave_height = search_sig_wave_height["WVHT"].head(1).values[0]
-    sig_wave_unit = weather_units.loc["WVHT"]
-    swell_period = search_sig_wave_height["DPD"].head(1).values[0]
-    swell_direction = search_sig_wave_height["MWD"].head(1).values[0]
-    Label(master=weather_frame, justify='right', text="Waves").grid(column=0, row=2, sticky=W)
-    Label(master=weather_frame, justify='right',
-          text=f"{sig_wave_height} {sig_wave_unit} @ {swell_period} s {swell_direction} \N{DEGREE SIGN}").grid(column=1,
-                                                                                                               row=2,
-                                                                                                               sticky=W)
-
-    wind_dir = weather_data.loc[1, 'WDIR']
-    wind_speed = weather_data.loc[1, 'WSPD']
-    wind_speed_unit = weather_units.loc['WSPD']
-    Label(master=weather_frame, justify='right', text="Wind").grid(column=0, row=3, sticky=W)
-    Label(master=weather_frame, justify='right',
-          text=f"{wind_speed} {wind_speed_unit} {wind_dir} \N{DEGREE SIGN}").grid(column=1, row=3, sticky=W)
-
-
-def summary_weather2(station):
+def summary_weather(station):
     Label(master=weather_frame, justify='right', text="Air").grid(column=0, row=0, sticky=W)
     Label(master=weather_frame, justify='right',
           text=f"{station.air_temperature} {station.air_temperature_unit}").grid(column=1, row=0, sticky=W)
@@ -286,33 +224,17 @@ def swell_plot(file_name):
     x = 1
 
 
-def display_data(file_list):
-    weather_frame.grid_forget()
-    tide_frame.grid_forget()
-    swell_frame.grid_forget()
-    # tide_plot(station)
-    for file in file_list:
-        if '.dart' in file:
-            tide_frame.grid(column=0, row=2)
-            tide_plot(file)
-        if '.txt' in file:
-            weather_frame.grid(column=0, row=1)
-            summary_weather(file)
-        if '.data_spec' in file:
-            swell_frame.grid(column=1, row=2)
-            swell_plot(file)
-
-
-def display_data2(station):
+def display_data(station):
     weather_frame.grid_forget()
     tide_frame.grid_forget()
     swell_frame.grid_forget()
     if station.tide_data is not None:
         tide_frame.grid(column=0, row=2)
-        tide_plot2(station)
+        tide_plot(station)
     if station.weather_data is not None:
         weather_frame.grid(column=0, row=1)
-        summary_weather2(station)
+        summary_weather(station)
+
 
 win = Tk()  # Instance of Tkinter frame
 win.title("Buoy Data Dashboard")
