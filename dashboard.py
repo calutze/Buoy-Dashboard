@@ -12,31 +12,9 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
+
 matplotlib.use('agg')
 
-class station:
-    def __init__(self, filename):
-        dart_data = pd.read_csv(filename, header=0, delimiter=r"\s+")
-
-    def tideplotter(self, file_name):
-        df = pd.read_csv(file_name, header=0, delimiter=r"\s+")
-        df.drop(columns=['T', 'ss'], inplace=True)
-        df.drop(0, inplace=True)
-        df['date'] = df[['#YY', 'MM', 'DD']].agg('-'.join, axis=1)
-        df['time'] = df[['hh', 'mm']].agg(':'.join, axis=1)
-        df['datetime'] = df['date'] + ' ' + df['time']
-        df['HEIGHT'] = df['HEIGHT'].astype(float)
-        df.plot(x='datetime', y='HEIGHT', kind='line', legend=None)
-        plt.ylabel('Height [m]')
-        plt.title("Tide")
-        plt.xlim(0, 500)
-        fig = Figure(figsize=(5, 5), dpi=100)
-        canvas = FigureCanvasTkAgg(fig, master=figframe)
-        canvas.draw()
-        canvas.get_tk_widget().pack()
-        #plt.show()
-
-    #def summary_weather_data(self):
 
 def location_search():
     address = location_entry.get()
@@ -63,24 +41,32 @@ def buoy_search():
     latitude_num = float(latitude.get())
     longitude_num = float(longitude.get())
     miles_to_latitude = 69  # Conversion between miles and latitude
-    radius_num = float(search_radius.get())/miles_to_latitude
+    radius_num = float(search_radius.get()) / miles_to_latitude
     for station in parsed_stations:
         station_lat = float(station.get('lat'))
         station_lon = float(station.get('lon'))
         if (latitude_num - radius_num) <= station_lat <= (latitude_num + radius_num):
             if (longitude_num - radius_num) <= station_lon <= (longitude_num + radius_num):
                 result.append(station)
-    # print(result)
-    searched_buoys.set(result)
-    map.delete_all_marker()
-    map.fit_bounding_box((latitude_num + radius_num, longitude_num - radius_num),
-                         (latitude_num - radius_num, longitude_num + radius_num))
-    location_marker = map.set_position(round(latitude_num,5), round(longitude_num,5), marker=True)
+    mark_buoys(result)
+
+
+def mark_buoys(buoy_list):
+    searched_buoys.set(buoy_list)
+    latitude_num = float(latitude.get())
+    longitude_num = float(longitude.get())
+    miles_to_latitude = 69  # Conversion between miles and latitude
+    radius_num = float(search_radius.get()) / miles_to_latitude
+    buoy_map.delete_all_marker()
+    buoy_map.fit_bounding_box((latitude_num + radius_num, longitude_num - radius_num),
+                              (latitude_num - radius_num, longitude_num + radius_num))
+    location_marker = buoy_map.set_position(round(latitude_num, 5), round(longitude_num, 5), marker=True)
     print(location_marker.position)
     location_marker.set_text("Search Location")
     markers = []
-    for buoy in result:
-        markers.append(map.set_marker(float(buoy.get("lat")), float(buoy.get("lon")), text=buoy.get("id"), command=click_buoy_event))
+    for buoy in buoy_list:
+        markers.append(buoy_map.set_marker(float(buoy.get("lat")), float(buoy.get("lon")),
+                                           text=buoy.get("id"), command=click_buoy_event))
 
 
 def load_stations():
@@ -116,7 +102,9 @@ def buoy_request():
         if message != 'No files downloaded':
             message_list = message.split(', ')
             print(f"Received Files: {message_list}")
-            display_data(message_list)
+            buoy_data = Station(message_list)
+            #display_data(message_list)
+            display_data2(buoy_data)
 
     connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
     channel = connection.channel()
@@ -127,6 +115,79 @@ def buoy_request():
     channel.basic_consume(queue="To_Main_Program", auto_ack=True, on_message_callback=callback)
     channel.start_consuming()
     connection.close()
+
+
+class Station:
+    def __init__(self, file_list):
+        self.tide_data = None
+        self.weather_data = None
+        self.weather_units = None
+        self.filtered_wave_data = None
+        for file in file_list:
+            if '.dart' in file:
+                self._create_tide_data(file)
+            if '.txt' in file:
+                self._create_weather_data(file)
+
+    def _create_tide_data(self, file):
+        self.tide_data = pd.read_csv(file, header=0, delimiter=r"\s+")
+        self.tide_data.drop(columns=['T', 'ss'], inplace=True)
+        self.tide_data.drop(0, inplace=True)
+        self.tide_data['date'] = self.tide_data[['#YY', 'MM', 'DD']].agg('-'.join, axis=1)
+        self.tide_data['time'] = self.tide_data[['hh', 'mm']].agg(':'.join, axis=1)
+        self.tide_data['datetime'] = self.tide_data['date'] + ' ' + self.tide_data['time']
+        self.tide_data['HEIGHT'] = self.tide_data['HEIGHT'].astype(float)
+
+    def _create_weather_data(self, file):
+        self.weather_data = pd.read_csv(file, header=0, delimiter=r"\s+", index_col=False)
+        self.weather_units = self.weather_data.loc[0].copy(deep=True)
+        self.weather_data.drop(0, inplace=True)
+        self.filtered_wave_data = self.weather_data[
+            (self.weather_data["WVHT"] != 'MM') & (self.weather_data["DPD"] != 'MM') & (
+                    self.weather_data["MWD"] != 'MM')]
+
+    def air_temperature(self):
+        search_air_temp = self.weather_data[self.weather_data["ATMP"] != "MM"]
+        if len(search_air_temp) == 0:
+            air_temperature = "N/A"
+        else:
+            air_temperature = search_air_temp['ATMP'].head(1).values[0]
+        return air_temperature
+
+    def air_temperature_unit(self):
+        return self.weather_units.loc['ATMP']
+
+    def water_temperature(self):
+        search_water_temp = self.weather_data[self.weather_data["WTMP"] != 'MM']
+        if len(search_water_temp) == 0:
+            water_temperature = "N/A"
+        else:
+            water_temperature = search_water_temp['WTMP'].head(1).values[0]
+        return water_temperature
+
+    def water_temperature_unit(self):
+        return self.weather_units.loc['WTMP']
+
+    def significant_wave_height(self):
+        return self.filtered_wave_data["WVHT"].head(1).values[0]
+
+    def wave_height_unit(self):
+        return self.weather_units.loc["WVHT"]
+
+    def swell_period(self):
+        return self.filtered_wave_data["DPD"].head(1).values[0]
+
+    def swell_direction(self):
+        return self.filtered_wave_data["MWD"].head(1).values[0]
+
+    def wind_speed(self):
+        return self.weather_data.loc[1, "WDIR"]
+
+    def wind_speed_unit(self):
+        return self.weather_units.loc["WSPD"]
+
+    def wind_direction(self):
+        return self.weather_data.loc[1, "WDIR"]
 
 
 def tide_plot(file_name):
@@ -140,13 +201,20 @@ def tide_plot(file_name):
     fig = Figure(figsize=(4, 4), dpi=100)
     ax = fig.add_subplot(111)
     tide_data.plot(x='datetime', y='HEIGHT', kind='line', legend=None, ax=ax,
-            ylabel='Height [m]', title='Tide', xlim=(0,200))
+                   ylabel='Height [m]', title='Tide', xlim=(0, 200))
     canvas = FigureCanvasTkAgg(fig, master=tide_frame)
     canvas.draw()
     canvas.get_tk_widget().pack()
-    #toolbar = NavigationToolbar2Tk(canvas, tide_frame)
-    #toolbar.update()
-    #canvas.get_tk_widget().pack()
+
+
+def tide_plot2(station):
+    fig = Figure(figsize=(4, 4), dpi=100)
+    ax = fig.add_subplot(111)
+    station.tide_data.plot(x='datetime', y='HEIGHT', kind='line', legend=None, ax=ax,
+                           ylabel='Height [m]', title='Tide', xlim=(0, 200))
+    canvas = FigureCanvasTkAgg(fig, master=tide_frame)
+    canvas.draw()
+    canvas.get_tk_widget().pack()
 
 
 def summary_weather(file_name):
@@ -180,7 +248,9 @@ def summary_weather(file_name):
     swell_direction = search_sig_wave_height["MWD"].head(1).values[0]
     Label(master=weather_frame, justify='right', text="Waves").grid(column=0, row=2, sticky=W)
     Label(master=weather_frame, justify='right',
-          text=f"{sig_wave_height} {sig_wave_unit} @ {swell_period} s {swell_direction} \N{DEGREE SIGN}").grid(column=1, row=2, sticky=W)
+          text=f"{sig_wave_height} {sig_wave_unit} @ {swell_period} s {swell_direction} \N{DEGREE SIGN}").grid(column=1,
+                                                                                                               row=2,
+                                                                                                               sticky=W)
 
     wind_dir = weather_data.loc[1, 'WDIR']
     wind_speed = weather_data.loc[1, 'WSPD']
@@ -189,13 +259,38 @@ def summary_weather(file_name):
     Label(master=weather_frame, justify='right',
           text=f"{wind_speed} {wind_speed_unit} {wind_dir} \N{DEGREE SIGN}").grid(column=1, row=3, sticky=W)
 
+
+def summary_weather2(station):
+    Label(master=weather_frame, justify='right', text="Air").grid(column=0, row=0, sticky=W)
+    Label(master=weather_frame, justify='right',
+          text=f"{station.air_temperature} {station.air_temperature_unit}").grid(column=1, row=0, sticky=W)
+
+    Label(master=weather_frame, justify='right', text="Water").grid(column=0, row=1, sticky=W)
+    Label(master=weather_frame, justify='right',
+          text=f"{station.water_temperature} "
+               f"{station.water_temperature_unit}").grid(column=1, row=1, sticky=W)
+
+    Label(master=weather_frame, justify='right', text="Waves").grid(column=0, row=2, sticky=W)
+    Label(master=weather_frame, justify='right',
+          text=f"{station.significant_wave_height} {station.wave_height_unit} @ {station.swell_period}"
+               f" s {station.swell_direction} \N{DEGREE SIGN}").grid(column=1, row=2, sticky=W)
+
+    Label(master=weather_frame, justify='right', text="Wind").grid(column=0, row=3, sticky=W)
+    Label(master=weather_frame, justify='right',
+          text=f"{station.wind_speed} {station.wind_speed_unit} "
+               f"{station.wind_direction} \N{DEGREE SIGN}").grid(column=1, row=3, sticky=W)
+
+
 def swell_plot(file_name):
-    x=1
+    # spec_data = pd.read_csv(file_name, header=0, delimiter=r"\s+", index_col=False)
+    x = 1
+
 
 def display_data(file_list):
     weather_frame.grid_forget()
     tide_frame.grid_forget()
     swell_frame.grid_forget()
+    # tide_plot(station)
     for file in file_list:
         if '.dart' in file:
             tide_frame.grid(column=0, row=2)
@@ -208,11 +303,22 @@ def display_data(file_list):
             swell_plot(file)
 
 
-win = Tk()      # Instance of Tkinter frame
+def display_data2(station):
+    weather_frame.grid_forget()
+    tide_frame.grid_forget()
+    swell_frame.grid_forget()
+    if station.tide_data is not None:
+        tide_frame.grid(column=0, row=2)
+        tide_plot2(station)
+    if station.weather_data is not None:
+        weather_frame.grid(column=0, row=1)
+        summary_weather2(station)
+
+win = Tk()  # Instance of Tkinter frame
 win.title("Buoy Data Dashboard")
 
 mainframe = ttk.Frame(win, padding="10")
-mainframe.grid(column=0, row=0, sticky=(N, W, E, S))
+mainframe.grid(column=0, row=0)
 weather_frame = ttk.Frame(win, padding='5')
 weather_frame.grid(column=0, row=1)
 tide_frame = ttk.Frame(win, padding='5')
@@ -222,44 +328,42 @@ swell_frame.grid(column=1, row=2)
 win.columnconfigure(0, weight=1)
 win.rowconfigure(0, weight=1)
 
-
 # Initialize label for location search
 location_label = Label(mainframe, text="Location Search")
-location_label.grid(column=0, row=1, sticky=(E))
+location_label.grid(column=0, row=1, sticky=E)
 # Create entry area for location search user input
 location_entry = StringVar(mainframe)
 location_field = Entry(mainframe, width=50, textvariable=location_entry)
 location_field.focus_set()
 location_field.grid(column=1, row=1, columnspan=2, sticky=(W, E))
 # Create Button for location search
-ttk.Button(mainframe, text="Search",width=15, command=location_search).grid(column=3, row=1)
+ttk.Button(mainframe, text="Search", width=15, command=location_search).grid(column=3, row=1)
 
 # Create Display label for buoy search latitude
-latitude_label = Label(mainframe, text="Latitude").grid(column=0, row=2)
+Label(mainframe, text="Latitude").grid(column=0, row=2)
 latitude = StringVar(mainframe)
-latitude_field = Entry(mainframe, textvariable=latitude).grid(column=1, row=2)
+Entry(mainframe, textvariable=latitude).grid(column=1, row=2)
 # Create Display label for buoy search latitude
-longitude_label = Label(mainframe, text="Longitude").grid(column=2, row=2)
+Label(mainframe, text="Longitude").grid(column=2, row=2)
 longitude = StringVar(mainframe)
-longitude_field = Entry(mainframe, textvariable=longitude).grid(column=3, row=2)
+Entry(mainframe, textvariable=longitude).grid(column=3, row=2)
 # Create Display label for buoy search radius
-radius_label = Label(mainframe, text="Radius [miles]").grid(column=4, row=2)
+Label(mainframe, text="Radius [miles]").grid(column=4, row=2)
 search_radius = StringVar(mainframe)
-radius_field = Entry(mainframe, textvariable=search_radius).grid(column=5, row=2)
+Entry(mainframe, textvariable=search_radius).grid(column=5, row=2)
 # Create Button for buoy search
 ttk.Button(mainframe, text="Search", width=15, command=buoy_search).grid(column=6, row=2)
 
 # Create Map Widget
-map = TkinterMapView(mainframe, width=500, height=500)
-map.grid(column=1, row=4, columnspan=5)
+buoy_map = TkinterMapView(mainframe, width=500, height=500)
+buoy_map.grid(column=1, row=4, columnspan=5)
 
 # Create Label for buoy id
 searched_buoys = Variable()
-buoy_label = Label(mainframe, text="Buoy ID:").grid(column=0, row=3)
+Label(mainframe, text="Buoy ID:").grid(column=0, row=3)
 buoy_id = StringVar(mainframe)
-buoy_field = Entry(mainframe, textvariable=buoy_id).grid(column=1, row=3)
+Entry(mainframe, textvariable=buoy_id).grid(column=1, row=3)
 # Create Button for buoy data search
 ttk.Button(mainframe, text="Get Data", width=15, command=microservice_thread).grid(column=3, row=3)
-
 
 win.mainloop()
