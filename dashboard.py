@@ -1,7 +1,7 @@
 import requests
 import urllib.parse
-import xml.etree.ElementTree as etree
-from tkinter import *
+import xml.etree.ElementTree as eT
+import tkinter as tk
 from tkinter import ttk
 from tkintermapview import TkinterMapView
 import pika
@@ -93,67 +93,68 @@ class Station:
     def wind_direction(self):
         return self.weather_data.loc[1, "WDIR"]
 
-#locationsearchbar
-def location_search():
-    address = location_entry.get()
-    print(address)
-    url = 'https://nominatim.openstreetmap.org/search?q=' + urllib.parse.quote(address) + '&format=json'
-    try:
-        response = requests.get(url).json()
-        result = response[0]["lon"], response[0]["lat"]
-        latitude.set(result[1])
-        longitude.set(result[0])
-        print(result)
-        return result
-    except Exception as error:
-        print(error)
-        return None, None
 
-#buoysearchbar
-def buoy_search():
-    print("Buoy Search")
-    # parse active station list
-    load_stations()
-    parsed_stations = parse_xml('activestations.xml')
-    result = []
-    latitude_num = float(latitude.get())
-    longitude_num = float(longitude.get())
-    miles_to_latitude = 69  # Conversion between miles and latitude
-    radius_num = float(search_radius.get()) / miles_to_latitude
-    for station in parsed_stations:
-        station_lat = float(station.get('lat'))
-        station_lon = float(station.get('lon'))
-        if (latitude_num - radius_num) <= station_lat <= (latitude_num + radius_num):
-            if (longitude_num - radius_num) <= station_lon <= (longitude_num + radius_num):
-                result.append(station)
-    mark_buoys(result)
+class App(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Buoy Data Dashboard")
+        self.app_data = {"location_entry": tk.StringVar(),
+                         "latitude": tk.StringVar(),
+                         "longitude": tk.StringVar(),
+                         "search_radius": tk.StringVar(),
+                         "searched_buoys": tk.StringVar(),
+                         "buoy_id": tk.StringVar(),
+                         "buoy_data": None}
+        self.location_frame = ttk.Frame(self)
+        self.location_frame.grid(column=0, row=0, sticky='W')
+        self.location_search_bar = LocationSearchBar(self.location_frame, self.app_data)
+        self.search_bar_frame = ttk.Frame(self)
+        self.search_bar_frame.grid(column=0, row=1, sticky='W')
+        self.buoy_search_bar = BuoySearch(self.search_bar_frame, self.app_data)
 
-#mapview
-def mark_buoys(buoy_list):
-    searched_buoys.set(buoy_list)
-    miles_to_latitude = 69  # Conversion between miles and latitude
-    radius_num = float(search_radius.get()) / miles_to_latitude
-    buoy_map.delete_all_marker()
-    buoy_map.fit_bounding_box((float(latitude.get()) + radius_num, float(longitude.get()) - radius_num),
-                              (float(latitude.get()) - radius_num, float(longitude.get()) + radius_num))
-    location_marker = buoy_map.set_position(round(float(latitude.get()), 5),
-                                            round(float(longitude.get()), 5), marker=True)
-    location_marker.set_text("Search Location")
-    markers = []
-    for buoy in buoy_list:
-        markers.append(buoy_map.set_marker(float(buoy.get("lat")), float(buoy.get("lon")),
-                                           text=buoy.get("id"), command=click_buoy_event))
 
-#buoysearchbar
+class LocationSearchBar(ttk.Frame):
+    def __init__(self, parent, controller):
+        super().__init__()
+        self.controller = controller
+        self.parent = parent
+        self.create_widgets()
+
+    def create_widgets(self):
+        # Initialize label for location search
+        tk.Label(self.parent, text="Location Search").grid(column=0, row=0, sticky="E")
+        # Create entry area for location search user input
+        location_field = tk.Entry(self.parent, width=50, textvariable=self.controller["location_entry"])
+        location_field.grid(column=1, row=0, sticky=("W", "E"))
+        location_field.focus_set()
+        # Create Button for location search
+        ttk.Button(self.parent, text="Search", width=15, command=self.location_search).grid(column=2, row=0)
+
+    def location_search(self):
+        address = self.controller["location_entry"].get()
+        print(address)
+        url = 'https://nominatim.openstreetmap.org/search?q=' + urllib.parse.quote(address) + '&format=json'
+        try:
+            response = requests.get(url).json()
+            result = response[0]["lon"], response[0]["lat"]
+            self.controller["latitude"].set(result[1])
+            self.controller["longitude"].set(result[0])
+            print(result)
+            return result
+        except Exception as error:
+            print(error)
+            return None, None
+
+
 def load_stations():
     station_list_url = "http://www.ndbc.noaa.gov/activestations.xml"
     response = requests.get(station_list_url)
     with open('activestations.xml', 'wb') as f:
         f.write(response.content)
 
-#buoysearchbar
+
 def parse_xml(xml_file):
-    tree = etree.parse(xml_file)
+    tree = eT.parse(xml_file)
     root = tree.getroot()
     station_list = []
     for child in root:
@@ -161,135 +162,148 @@ def parse_xml(xml_file):
         station_list.append(station)
     return station_list
 
-#mapview
-def click_buoy_event(marker):
-    buoy_id.set(marker.text)
-    microservice_thread()
 
-#buoydatabar
-def microservice_thread():
-    ms_thread = Thread(target=buoy_request)
-    ms_thread.start()
+class BuoySearch(ttk.Frame):
+    def __init__(self, parent, controller):
+        super().__init__(parent)
+        self.parent = parent
+        self.controller = controller
+        self.buoy_map = TkinterMapView(self.parent, width=400, height=400)
+        self.weather_frame = ttk.Frame(self.parent)
+        self.tide_frame = ttk.Frame(self.parent)
+        self.create_widgets()
 
-#buoydatabar
-def microservice_response(ch, method, properties, body):
-    message = body.decode('utf-8')
-    if message != 'No files downloaded':
-        message_list = message.split(', ')
-        print(f"Received Files: {message_list}")
-        buoy_data = Station(message_list)
-        display_data(buoy_data)
+    def create_widgets(self):
+        # Create Display label for buoy search latitude
+        tk.Label(self.parent, text="Latitude").grid(column=0, row=2)
+        tk.Entry(self.parent, textvariable=self.controller['latitude']).grid(column=1, row=2, sticky='W')
+        # Create Display label for buoy search latitude
+        tk.Label(self.parent, text="Longitude").grid(column=2, row=2)
+        tk.Entry(self.parent, textvariable=self.controller['longitude']).grid(column=3, row=2)
+        # Create Display label for buoy search radius
+        tk.Label(self.parent, text="Radius [miles]").grid(column=4, row=2)
+        tk.Entry(self.parent, textvariable=self.controller['search_radius']).grid(column=5, row=2)
+        # Create Button for buoy search
+        ttk.Button(self.parent, text="Search", width=15, command=self.buoy_search).grid(column=6, row=2)
+        # Create Label for buoy id
+        tk.Label(self.parent, text="Buoy ID:").grid(column=0, row=3)
+        tk.Entry(self.parent, textvariable=self.controller['buoy_id']).grid(column=1, row=3)
+        # Create Button for buoy data search
+        ttk.Button(self.parent, text="Get Data", width=15,
+                   command=self.microservice_thread).grid(column=2, row=3)
+        self.buoy_map.grid(column=1, row=4, columnspan=5)
 
-#buoydatabar
-def buoy_request():
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
-    channel = connection.channel()
-    channel.queue_declare(queue='To_Microservice')
-    channel.queue_declare(queue='To_Main_Program')
-    channel.basic_publish(exchange='', routing_key='To_Microservice', body=buoy_id.get())
-    print(f"Sent {buoy_id.get()}")
-    channel.basic_consume(queue="To_Main_Program", auto_ack=True, on_message_callback=microservice_response)
-    channel.start_consuming()
-    connection.close()
+    def buoy_search(self):
+        print("Buoy Search")
+        load_stations()
+        parsed_stations = parse_xml('activestations.xml')
+        result = []
+        latitude_num = float(self.controller['latitude'].get())
+        longitude_num = float(self.controller['longitude'].get())
+        miles_to_latitude = 69  # Conversion between miles and latitude
+        radius_num = float(self.controller['search_radius'].get()) / miles_to_latitude
+        for station in parsed_stations:
+            station_lat = float(station.get('lat'))
+            station_lon = float(station.get('lon'))
+            if (latitude_num - radius_num) <= station_lat <= (latitude_num + radius_num):
+                if (longitude_num - radius_num) <= station_lon <= (longitude_num + radius_num):
+                    result.append(station)
+        self.mark_buoys(result)
 
-#resultplots
-def tide_plot(station):
-    fig = Figure(figsize=(4, 4), dpi=100)
-    ax = fig.add_subplot(111)
-    station.tide_data.plot(x='datetime', y='HEIGHT', kind='line', legend=None, ax=ax,
-                           ylabel='Height [m]', title='Tide', xlim=(0, 200))
-    canvas = FigureCanvasTkAgg(fig, master=tide_frame)
-    canvas.draw()
-    canvas.get_tk_widget().pack()
+    def mark_buoys(self, buoy_list):
+        self.controller['searched_buoys'].set(buoy_list)
+        miles_to_latitude = 69  # Conversion between miles and latitude
+        radius_num = float(self.controller['search_radius'].get()) / miles_to_latitude
+        self.buoy_map.delete_all_marker()
+        self.buoy_map.fit_bounding_box((float(self.controller['latitude'].get()) + radius_num,
+                                        float(self.controller['longitude'].get()) - radius_num),
+                                       (float(self.controller['latitude'].get()) - radius_num,
+                                        float(self.controller['longitude'].get()) + radius_num))
+        location_marker = self.buoy_map.set_position(round(float(self.controller['latitude'].get()), 5),
+                                                     round(float(self.controller['longitude'].get()), 5),
+                                                     marker=True)
+        location_marker.set_text("Search Location")
+        markers = []
+        for buoy in buoy_list:
+            markers.append(self.buoy_map.set_marker(float(buoy.get("lat")), float(buoy.get("lon")),
+                                                    text=buoy.get("id"), command=self.click_buoy_event))
 
-#resultplots
-def summary_weather(station):
-    Label(master=weather_frame, justify='right', text="Air").grid(column=0, row=0, sticky=W)
-    Label(master=weather_frame, justify='right',
-          text=f"{station.air_temperature()} {station.air_temperature_unit()}").grid(column=1, row=0, sticky=W)
+    def click_buoy_event(self, marker):
+        self.controller['buoy_id'].set(marker.text)
+        self.microservice_thread()
 
-    Label(master=weather_frame, justify='right', text="Water").grid(column=0, row=1, sticky=W)
-    Label(master=weather_frame, justify='right',
-          text=f"{station.water_temperature()} "
-               f"{station.water_temperature_unit()}").grid(column=1, row=1, sticky=W)
+    def microservice_thread(self):
+        ms_thread = Thread(target=self.buoy_request)
+        ms_thread.start()
 
-    Label(master=weather_frame, justify='right', text="Waves").grid(column=0, row=2, sticky=W)
-    Label(master=weather_frame, justify='right',
-          text=f"{station.significant_wave_height()} {station.wave_height_unit()} @ {station.swell_period()}"
-               f" s {station.swell_direction()} \N{DEGREE SIGN}").grid(column=1, row=2, sticky=W)
+    def microservice_response(self, ch, method, properties, body):
+        message = body.decode('utf-8')
+        if message != 'No files downloaded':
+            message_list = message.split(', ')
+            print(f"Received Files: {message_list}")
+            self.controller['buoy_data'] = Station(message_list)
+            self.display_data()
 
-    Label(master=weather_frame, justify='right', text="Wind").grid(column=0, row=3, sticky=W)
-    Label(master=weather_frame, justify='right',
-          text=f"{station.wind_speed()} {station.wind_speed_unit()} "
-               f"{station.wind_direction()} \N{DEGREE SIGN}").grid(column=1, row=3, sticky=W)
+    def buoy_request(self):
+        connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+        channel = connection.channel()
+        channel.queue_declare(queue='To_Microservice')
+        channel.queue_declare(queue='To_Main_Program')
+        channel.basic_publish(exchange='', routing_key='To_Microservice',
+                              body=self.controller['buoy_id'].get())
+        print(f"Sent {self.controller['buoy_id'].get()}")
+        channel.basic_consume(queue="To_Main_Program", auto_ack=True,
+                              on_message_callback=self.microservice_response)
+        channel.start_consuming()
+        connection.close()
 
-#resultplots
-def swell_plot(file_name):
-    x = 1
+    def display_data(self):
+        self.weather_frame.grid_forget()
+        self.tide_frame.grid_forget()
+        if self.controller['buoy_data'] is not None:
+            if self.controller['buoy_data'].weather_data is not None:
+                self.weather_frame.grid(column=7, row=4)
+                self.summary_weather(self.controller['buoy_data'])
+        if self.controller['buoy_data'] is not None:
+            if self.controller['buoy_data'].tide_data is not None:
+                self.tide_frame.grid(column=8, row=4)
+                self.tide_plot(self.controller['buoy_data'])
 
-#resultplots
-def display_data(station):
-    weather_frame.grid_forget()
-    tide_frame.grid_forget()
-    swell_frame.grid_forget()
-    if station.tide_data is not None:
-        tide_frame.grid(column=0, row=0)
-        tide_plot(station)
-    if station.weather_data is not None:
-        weather_frame.grid(column=0, row=0)
-        summary_weather(station)
+    def tide_plot(self, station):
+        fig = Figure(figsize=(4, 4), dpi=100)
+        ax = fig.add_subplot(111)
+        station.tide_data.plot(x='datetime', y='HEIGHT', kind='line', legend=None, ax=ax,
+                               ylabel='Height [m]', title='Tide', xlim=(0, 150))
+        canvas = FigureCanvasTkAgg(fig, master=self.tide_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack()
+
+    def summary_weather(self, station):
+        tk.Label(master=self.weather_frame, justify='center', text="Conditions Summary").grid(column=0, row=0)
+        tk.Label(master=self.weather_frame, justify='right', text="Air").grid(column=0, row=1, sticky='W')
+        tk.Label(master=self.weather_frame, justify='right',
+                 text=f"{station.air_temperature()} {station.air_temperature_unit()}").grid(column=1, row=1, sticky='W')
+
+        tk.Label(master=self.weather_frame, justify='right', text="Water").grid(column=0, row=2, sticky='W')
+        tk.Label(master=self.weather_frame, justify='right',
+                 text=f"{station.water_temperature()} "
+                      f"{station.water_temperature_unit()}").grid(column=1, row=2, sticky='W')
+
+        tk.Label(master=self.weather_frame, justify='right', text="Waves").grid(column=0, row=3, sticky='W')
+        tk.Label(master=self.weather_frame, justify='right',
+                 text=f"{station.significant_wave_height()} {station.wave_height_unit()} @ {station.swell_period()}"
+                      f" s {station.swell_direction()} \N{DEGREE SIGN}").grid(column=1, row=3, sticky='W')
+
+        tk.Label(master=self.weather_frame, justify='right', text="Wind").grid(column=0, row=4, sticky='W')
+        tk.Label(master=self.weather_frame, justify='right',
+                 text=f"{station.wind_speed()} {station.wind_speed_unit()} "
+                      f"{station.wind_direction()} \N{DEGREE SIGN}").grid(column=1, row=4, sticky='W')
 
 
-win = Tk()  # Instance of Tkinter frame
-win.title("Buoy Data Dashboard")
+def main():
+    myapp = App()
+    myapp.mainloop()
 
-mainframe = ttk.Frame(win, padding="10")
-mainframe.grid(column=0, row=0)
-weather_frame = ttk.Frame(win, padding='5')
-weather_frame.grid(column=0, row=1)
-tide_frame = ttk.Frame(win, padding='5')
-tide_frame.grid(column=0, row=2)
-swell_frame = ttk.Frame(win, padding='5')
-swell_frame.grid(column=1, row=2)
-win.columnconfigure(0, weight=1)
-win.rowconfigure(0, weight=1)
 
-# Initialize label for location search
-location_label = Label(mainframe, text="Location Search")
-location_label.grid(column=0, row=1, sticky=E)
-# Create entry area for location search user input
-location_entry = StringVar(mainframe)
-location_field = Entry(mainframe, width=50, textvariable=location_entry)
-location_field.focus_set()
-location_field.grid(column=1, row=1, columnspan=2, sticky=('W', 'E'))
-# Create Button for location search
-ttk.Button(mainframe, text="Search", width=15, command=location_search).grid(column=3, row=1)
-
-# Create Display label for buoy search latitude
-Label(mainframe, text="Latitude").grid(column=0, row=2)
-latitude = StringVar(mainframe)
-Entry(mainframe, textvariable=latitude).grid(column=1, row=2)
-# Create Display label for buoy search latitude
-Label(mainframe, text="Longitude").grid(column=2, row=2)
-longitude = StringVar(mainframe)
-Entry(mainframe, textvariable=longitude).grid(column=3, row=2)
-# Create Display label for buoy search radius
-Label(mainframe, text="Radius [miles]").grid(column=4, row=2)
-search_radius = StringVar(mainframe)
-Entry(mainframe, textvariable=search_radius).grid(column=5, row=2)
-# Create Button for buoy search
-ttk.Button(mainframe, text="Search", width=15, command=buoy_search).grid(column=6, row=2)
-
-# Create Map Widget
-buoy_map = TkinterMapView(mainframe, width=500, height=500)
-buoy_map.grid(column=1, row=4, columnspan=5)
-
-# Create Label for buoy id
-searched_buoys = Variable()
-Label(mainframe, text="Buoy ID:").grid(column=0, row=3)
-buoy_id = StringVar(mainframe)
-Entry(mainframe, textvariable=buoy_id).grid(column=1, row=3)
-# Create Button for buoy data search
-ttk.Button(mainframe, text="Get Data", width=15, command=microservice_thread).grid(column=3, row=3)
-
-win.mainloop()
+if __name__ == "__main__":
+    main()

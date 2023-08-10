@@ -106,14 +106,12 @@ class App(tk.Tk):
                          "searched_buoys": tk.StringVar(),
                          "buoy_id": tk.StringVar(),
                          "buoy_data": None}
-        self.location_frame = ttk.Frame(self, padding='5')
+        self.location_frame = ttk.Frame(self)
         self.location_frame.grid(column=0, row=0, sticky='W')
         self.location_search_bar = LocationSearchBar(self.location_frame, self.app_data)
-        self.search_bar_frame = ttk.Frame(self, padding='5')
+        self.search_bar_frame = ttk.Frame(self)
         self.search_bar_frame.grid(column=0, row=1, sticky='W')
         self.buoy_search_bar = BuoySearch(self.search_bar_frame, self.app_data)
-        self.plot_frame = ttk.Frame(self, padding='5')
-        self.plot_frame.grid(column=1, row=1)
 
 
 class LocationSearchBar(ttk.Frame):
@@ -172,6 +170,8 @@ class BuoySearch(ttk.Frame):
         self.parent = parent
         self.controller = controller
         self.buoy_map = TkinterMapView(self.parent, width=400, height=400)
+        self.weather_frame = ttk.Frame(self.parent)
+        self.tide_frame = ttk.Frame(self.parent)
         self.create_widgets()
 
     def create_widgets(self):
@@ -243,8 +243,7 @@ class BuoySearch(ttk.Frame):
             message_list = message.split(', ')
             print(f"Received Files: {message_list}")
             self.controller['buoy_data'] = Station(message_list)
-            plots = ResultPlots(self.master.master.plot_frame, self.controller)
-            plots.destroy()
+            self.display_data()
 
     def buoy_request(self):
         connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
@@ -258,6 +257,48 @@ class BuoySearch(ttk.Frame):
                               on_message_callback=self.microservice_response)
         channel.start_consuming()
         connection.close()
+
+    def display_data(self):
+        self.weather_frame.grid_forget()
+        self.tide_frame.grid_forget()
+        if self.controller['buoy_data'] is not None:
+            if self.controller['buoy_data'].weather_data is not None:
+                self.weather_frame.grid(column=7, row=4)
+                self.summary_weather(self.controller['buoy_data'])
+        if self.controller['buoy_data'] is not None:
+            if self.controller['buoy_data'].tide_data is not None:
+                self.tide_frame.grid(column=8, row=4)
+                self.tide_plot(self.controller['buoy_data'])
+
+    def tide_plot(self, station):
+        fig = Figure(figsize=(4, 4), dpi=100)
+        ax = fig.add_subplot(111)
+        station.tide_data.plot(x='datetime', y='HEIGHT', kind='line', legend=None, ax=ax,
+                               ylabel='Height [m]', title='Tide', xlim=(0, 150))
+        canvas = FigureCanvasTkAgg(fig, master=self.tide_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack()
+
+    def summary_weather(self, station):
+        tk.Label(master=self.weather_frame, justify='center', text="Conditions Summary").grid(column=0, row=0)
+        tk.Label(master=self.weather_frame, justify='right', text="Air").grid(column=0, row=1, sticky='W')
+        tk.Label(master=self.weather_frame, justify='right',
+                 text=f"{station.air_temperature()} {station.air_temperature_unit()}").grid(column=1, row=1, sticky='W')
+
+        tk.Label(master=self.weather_frame, justify='right', text="Water").grid(column=0, row=2, sticky='W')
+        tk.Label(master=self.weather_frame, justify='right',
+                 text=f"{station.water_temperature()} "
+                      f"{station.water_temperature_unit()}").grid(column=1, row=2, sticky='W')
+
+        tk.Label(master=self.weather_frame, justify='right', text="Waves").grid(column=0, row=3, sticky='W')
+        tk.Label(master=self.weather_frame, justify='right',
+                 text=f"{station.significant_wave_height()} {station.wave_height_unit()} @ {station.swell_period()}"
+                      f" s {station.swell_direction()} \N{DEGREE SIGN}").grid(column=1, row=3, sticky='W')
+
+        tk.Label(master=self.weather_frame, justify='right', text="Wind").grid(column=0, row=4, sticky='W')
+        tk.Label(master=self.weather_frame, justify='right',
+                 text=f"{station.wind_speed()} {station.wind_speed_unit()} "
+                      f"{station.wind_direction()} \N{DEGREE SIGN}").grid(column=1, row=4, sticky='W')
 
 
 class ResultPlots(ttk.Frame):
