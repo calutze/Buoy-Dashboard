@@ -1,6 +1,6 @@
 import requests
 import urllib.parse
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as etree
 from tkinter import *
 from tkinter import ttk
 from tkintermapview import TkinterMapView
@@ -21,11 +21,14 @@ class Station:
         self.weather_data = None
         self.weather_units = None
         self.filtered_wave_data = None
+        self.swell_data = None
         for file in file_list:
             if '.dart' in file:
                 self._create_tide_data(file)
             if '.txt' in file:
                 self._create_weather_data(file)
+            if '.spec' in file:
+                self._create_swell_data(file)
 
     def _create_tide_data(self, file):
         self.tide_data = pd.read_csv(file, header=0, delimiter=r"\s+")
@@ -43,6 +46,9 @@ class Station:
         self.filtered_wave_data = self.weather_data[
             (self.weather_data["WVHT"] != 'MM') & (self.weather_data["DPD"] != 'MM') & (
                     self.weather_data["MWD"] != 'MM')]
+
+    def _create_swell_data(self, file):
+        x=1
 
     def air_temperature(self):
         search_air_temp = self.weather_data[self.weather_data["ATMP"] != "MM"]
@@ -87,7 +93,7 @@ class Station:
     def wind_direction(self):
         return self.weather_data.loc[1, "WDIR"]
 
-
+#locationsearchbar
 def location_search():
     address = location_entry.get()
     print(address)
@@ -103,7 +109,7 @@ def location_search():
         print(error)
         return None, None
 
-
+#buoysearchbar
 def buoy_search():
     print("Buoy Search")
     # parse active station list
@@ -122,34 +128,32 @@ def buoy_search():
                 result.append(station)
     mark_buoys(result)
 
-
+#mapview
 def mark_buoys(buoy_list):
     searched_buoys.set(buoy_list)
-    latitude_num = float(latitude.get())
-    longitude_num = float(longitude.get())
     miles_to_latitude = 69  # Conversion between miles and latitude
     radius_num = float(search_radius.get()) / miles_to_latitude
     buoy_map.delete_all_marker()
-    buoy_map.fit_bounding_box((latitude_num + radius_num, longitude_num - radius_num),
-                              (latitude_num - radius_num, longitude_num + radius_num))
-    location_marker = buoy_map.set_position(round(latitude_num, 5), round(longitude_num, 5), marker=True)
-    print(location_marker.position)
+    buoy_map.fit_bounding_box((float(latitude.get()) + radius_num, float(longitude.get()) - radius_num),
+                              (float(latitude.get()) - radius_num, float(longitude.get()) + radius_num))
+    location_marker = buoy_map.set_position(round(float(latitude.get()), 5),
+                                            round(float(longitude.get()), 5), marker=True)
     location_marker.set_text("Search Location")
     markers = []
     for buoy in buoy_list:
         markers.append(buoy_map.set_marker(float(buoy.get("lat")), float(buoy.get("lon")),
                                            text=buoy.get("id"), command=click_buoy_event))
 
-
+#buoysearchbar
 def load_stations():
     station_list_url = "http://www.ndbc.noaa.gov/activestations.xml"
     response = requests.get(station_list_url)
     with open('activestations.xml', 'wb') as f:
         f.write(response.content)
 
-
+#buoysearchbar
 def parse_xml(xml_file):
-    tree = ET.parse(xml_file)
+    tree = etree.parse(xml_file)
     root = tree.getroot()
     station_list = []
     for child in root:
@@ -157,37 +161,38 @@ def parse_xml(xml_file):
         station_list.append(station)
     return station_list
 
-
+#mapview
 def click_buoy_event(marker):
     buoy_id.set(marker.text)
     microservice_thread()
 
-
+#buoydatabar
 def microservice_thread():
     ms_thread = Thread(target=buoy_request)
     ms_thread.start()
 
+#buoydatabar
+def microservice_response(ch, method, properties, body):
+    message = body.decode('utf-8')
+    if message != 'No files downloaded':
+        message_list = message.split(', ')
+        print(f"Received Files: {message_list}")
+        buoy_data = Station(message_list)
+        display_data(buoy_data)
 
+#buoydatabar
 def buoy_request():
-    def callback(ch, method, properties, body):
-        message = body.decode('utf-8')
-        if message != 'No files downloaded':
-            message_list = message.split(', ')
-            print(f"Received Files: {message_list}")
-            buoy_data = Station(message_list)
-            display_data(buoy_data)
-
     connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
     channel = connection.channel()
     channel.queue_declare(queue='To_Microservice')
     channel.queue_declare(queue='To_Main_Program')
     channel.basic_publish(exchange='', routing_key='To_Microservice', body=buoy_id.get())
     print(f"Sent {buoy_id.get()}")
-    channel.basic_consume(queue="To_Main_Program", auto_ack=True, on_message_callback=callback)
+    channel.basic_consume(queue="To_Main_Program", auto_ack=True, on_message_callback=microservice_response)
     channel.start_consuming()
     connection.close()
 
-
+#resultplots
 def tide_plot(station):
     fig = Figure(figsize=(4, 4), dpi=100)
     ax = fig.add_subplot(111)
@@ -197,7 +202,7 @@ def tide_plot(station):
     canvas.draw()
     canvas.get_tk_widget().pack()
 
-
+#resultplots
 def summary_weather(station):
     Label(master=weather_frame, justify='right', text="Air").grid(column=0, row=0, sticky=W)
     Label(master=weather_frame, justify='right',
@@ -218,21 +223,20 @@ def summary_weather(station):
           text=f"{station.wind_speed()} {station.wind_speed_unit()} "
                f"{station.wind_direction()} \N{DEGREE SIGN}").grid(column=1, row=3, sticky=W)
 
-
+#resultplots
 def swell_plot(file_name):
-    # spec_data = pd.read_csv(file_name, header=0, delimiter=r"\s+", index_col=False)
     x = 1
 
-
+#resultplots
 def display_data(station):
     weather_frame.grid_forget()
     tide_frame.grid_forget()
     swell_frame.grid_forget()
     if station.tide_data is not None:
-        tide_frame.grid(column=0, row=2)
+        tide_frame.grid(column=0, row=0)
         tide_plot(station)
     if station.weather_data is not None:
-        weather_frame.grid(column=0, row=1)
+        weather_frame.grid(column=0, row=0)
         summary_weather(station)
 
 
@@ -257,7 +261,7 @@ location_label.grid(column=0, row=1, sticky=E)
 location_entry = StringVar(mainframe)
 location_field = Entry(mainframe, width=50, textvariable=location_entry)
 location_field.focus_set()
-location_field.grid(column=1, row=1, columnspan=2, sticky=(W, E))
+location_field.grid(column=1, row=1, columnspan=2, sticky=('W', 'E'))
 # Create Button for location search
 ttk.Button(mainframe, text="Search", width=15, command=location_search).grid(column=3, row=1)
 
